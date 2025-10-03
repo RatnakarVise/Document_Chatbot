@@ -1,0 +1,14 @@
+streamlit
+langchain 
+openai 
+faiss-cpu 
+PyPDF2 
+python-docx
+langchain_openai
+langchain_community
+dotenv
+pandas
+openpyxl
+zipfile36
+io
+office365
