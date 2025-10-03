@@ -10,5 +10,5 @@ dotenv
 pandas
 openpyxl
 zipfile36
-io
 office365
+Office365-REST-Python-Client
