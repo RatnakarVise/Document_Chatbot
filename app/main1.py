@@ -63,14 +63,13 @@ with left:
                     relative_url = unquote(parsed.path)
 
                     ctx = ClientContext(site_url).with_credentials(UserCredential(username, password))
-                    response = ctx.web.get_file_by_server_relative_url(relative_url).download()
-                    ctx.execute_query()
-
                     uploaded_bytes = io.BytesIO()
-                    uploaded_bytes.write(response.content)
+                    file = ctx.web.get_file_by_server_relative_url(relative_url)
+                    file.download(uploaded_bytes).execute_query()
                     uploaded_bytes.seek(0)
                     filename = os.path.basename(relative_url)
                     st.success(f"✅ {filename} loaded from SharePoint")
+
                 except Exception as e:
                     st.error(f"Error loading SharePoint file: {e}")
 
