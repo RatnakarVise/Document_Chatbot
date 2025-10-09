@@ -9,12 +9,15 @@ from qa_engine import build_qa_engine
 
 # Optional: SharePoint SDK
 from office365.sharepoint.client_context import ClientContext
-from office365.runtime.auth.user_credential import UserCredential
+from office365.runtime.auth.client_credential import ClientCredential
 
 # ---------------- Load Environment ----------------
 dotenv_path = os.path.join(os.path.dirname(__file__), ".env")
 load_dotenv(dotenv_path=dotenv_path)
 openai_api_key = os.getenv("OPENAI_API_KEY")
+tenant_id = os.getenv("TENANT_ID")
+client_id = os.getenv("CLIENT_ID")
+client_secret = os.getenv("CLIENT_SECRET")
 
 # ---------------- Session State ----------------
 if "chat_history" not in st.session_state:
@@ -52,26 +55,29 @@ with left:
             filename = uploaded_file.name
 
     elif option == "SharePoint Link":
-        sharepoint_url = st.text_input("Enter SharePoint file URL")
-        username = st.text_input("SharePoint Username")
-        password = st.text_input("SharePoint Password", type="password")
+        st.markdown("Use your App Registration credentials (no password needed).")
+        sharepoint_url = st.text_input("Enter SharePoint File URL")
+
         if st.button("Load from SharePoint"):
-            if sharepoint_url and username and password:
+            if sharepoint_url:
                 try:
                     parsed = urlparse(sharepoint_url)
                     site_url = f"{parsed.scheme}://{parsed.netloc}"
                     relative_url = unquote(parsed.path)
 
-                    ctx = ClientContext(site_url).with_credentials(UserCredential(username, password))
+                    # Use App Registration for secure access
+                    credentials = ClientCredential(client_id, client_secret)
+                    ctx = ClientContext(site_url).with_credentials(credentials)
+
                     uploaded_bytes = io.BytesIO()
                     file = ctx.web.get_file_by_server_relative_url(relative_url)
                     file.download(uploaded_bytes).execute_query()
                     uploaded_bytes.seek(0)
-                    filename = os.path.basename(relative_url)
-                    st.success(f"✅ {filename} loaded from SharePoint")
 
+                    filename = os.path.basename(relative_url)
+                    st.success(f"✅ {filename} loaded from SharePoint using App Credentials")
                 except Exception as e:
-                    st.error(f"Error loading SharePoint file: {e}")
+                    st.error(f"❌ Error loading from SharePoint: {e}")
 
     # ---------------- Process File ----------------
     if uploaded_bytes and filename:
