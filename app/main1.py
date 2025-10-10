@@ -3,7 +3,7 @@ import os
 import io
 import requests
 from dotenv import load_dotenv
-from urllib.parse import urlparse, unquote
+from urllib.parse import urlparse
 import base64
 from file_loader import get_raw_text
 from qa_engine import build_qa_engine
@@ -54,18 +54,33 @@ with left:
 
     # --- SharePoint via Graph API ---
     elif option == "SharePoint Link":
-        st.markdown("Use Azure AD App Registration (Client ID / Secret).")
-        sharepoint_url = st.text_input("Enter SharePoint File URL or Sharing Link")
+        st.markdown("Load documents from SharePoint (single file or folder).")
+        sharepoint_url = st.text_input("Enter SharePoint File/Folder URL or Sharing Link")
 
-        # Optional manual override
-        # tenant_id = st.text_input("Tenant ID", value=tenant_id or "")
-        # client_id = st.text_input("Client ID", value=client_id or "")
-        # client_secret = st.text_input("Client Secret", value=client_secret or "", type="password")
+        def load_sharepoint_folder(site_id, folder_path, access_token):
+            """
+            Download all files in a SharePoint folder via Graph API
+            """
+            folder_api = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drive/root:/{folder_path}:/children"
+            res = requests.get(folder_api, headers={"Authorization": f"Bearer {access_token}"})
+            res.raise_for_status()
+            items = res.json().get("value", [])
+
+            all_files = []
+            for item in items:
+                if item.get("file"):  # skip subfolders
+                    download_url = item.get("@microsoft.graph.downloadUrl")
+                    filename = item.get("name")
+                    if download_url:
+                        file_res = requests.get(download_url)
+                        file_res.raise_for_status()
+                        all_files.append({"name": filename, "bytes": io.BytesIO(file_res.content)})
+            return all_files
 
         if st.button("Load from SharePoint (Graph API)"):
-            if sharepoint_url and client_id and client_secret and tenant_id:
+            if sharepoint_url:
                 try:
-                    # ---------------- Step 1️⃣ — Get Access Token ----------------
+                    # ---------------- Step 1 — Get Access Token ----------------
                     token_url = f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
                     token_data = {
                         "grant_type": "client_credentials",
@@ -77,93 +92,86 @@ with left:
                     token_response.raise_for_status()
                     access_token = token_response.json().get("access_token")
 
-                    # ---------------- Step 2️⃣ — Detect URL Type ----------------
+                    # ---------------- Step 2 — Detect URL Type ----------------
                     if "/:b:/" in sharepoint_url or "/:f:/" in sharepoint_url or "/:w:/" in sharepoint_url:
-                        st.write("Detected: Sharing Link (base64 encoded method)")
+                        # Single file sharing link
+                        st.write("Detected: Sharing Link (single file)")
                         encoded_url = base64.urlsafe_b64encode(sharepoint_url.strip().encode("utf-8")).decode("utf-8").rstrip("=")
 
-                        # Step 1️⃣ — Get metadata
+                        # Get metadata
                         meta_url = f"https://graph.microsoft.com/v1.0/shares/u!{encoded_url}/driveItem"
                         meta_res = requests.get(meta_url, headers={"Authorization": f"Bearer {access_token}"})
                         meta_res.raise_for_status()
                         meta_json = meta_res.json()
-                        
-                        # Extract file name
-                        filename = meta_json.get("name", "sharepoint_file")
-                        st.write(f"**File Name:** {filename}")
 
-                        # Step 2️⃣ — Get download URL
+                        filename = meta_json.get("name", "sharepoint_file")
                         download_url = meta_json.get("@microsoft.graph.downloadUrl")
                         if download_url:
                             res = requests.get(download_url)
                             res.raise_for_status()
                             uploaded_bytes = io.BytesIO(res.content)
-                            # st.write(f"**uploaded_bytes:** {uploaded_bytes}")
-                            st.success(f"✅ {filename} loaded successfully via Sharing Link")
+                            # Process file
+                            st.session_state.last_uploaded_file_bytes = None
+                            st.session_state.chat_history = []
+                            st.session_state.raw_text = get_raw_text(uploaded_bytes.getvalue(), filename)
+                            st.session_state.qa = build_qa_engine(st.session_state.raw_text, openai_api_key)
+                            st.success(f"✅ {filename} loaded successfully")
                         else:
                             st.error("⚠️ Could not get download URL from Graph metadata.")
 
-
                     else:
-                        # 🌐 Direct Site File Path Mode
+                        # Folder link / direct site path
                         parsed = urlparse(sharepoint_url)
                         site_hostname = parsed.netloc
                         path_parts = parsed.path.strip("/").split("/")
                         site_name = path_parts[1] if len(path_parts) > 1 else "sites"
-                        relative_file_path = "/".join(path_parts[2:])
+                        relative_path = "/".join(path_parts[2:])
 
-                        # st.write("### 🔍 Debug Info")
-                        # st.write(f"**Original URL:** {sharepoint_url}")
-                        # st.write(f"**Site Hostname:** {site_hostname}")
-                        # st.write(f"**Site Name:** {site_name}")
-                        # st.write(f"**Relative File Path:** {relative_file_path}")
-
-                        # Step 3️⃣ — Get Site ID
+                        # Step 3 — Get Site ID
                         site_api = f"https://graph.microsoft.com/v1.0/sites/{site_hostname}:/sites/{site_name}"
                         site_res = requests.get(site_api, headers={"Authorization": f"Bearer {access_token}"})
                         site_res.raise_for_status()
                         site_id = site_res.json()["id"]
-                        st.write(f"✅ Site ID: {site_id}")
 
-                        # Step 4️⃣ — Get File Content
-                        drive_api = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drive/root:/{relative_file_path}:/content"
-                        file_res = requests.get(drive_api, headers={"Authorization": f"Bearer {access_token}"})
-                        file_res.raise_for_status()
+                        # Step 4 — Load all files in folder
+                        all_files = load_sharepoint_folder(site_id, relative_path, access_token)
+                        if not all_files:
+                            st.warning("⚠️ No files found in the folder.")
+                        else:
+                            all_text = ""
+                            for file in all_files:
+                                all_text += get_raw_text(file["bytes"].getvalue(), file["name"]) + "\n\n"
 
-                        uploaded_bytes = io.BytesIO(file_res.content)
-                        filename = os.path.basename(relative_file_path)
-                        st.write(f"**File Name:** {filename}")
-                        st.success(f"✅ {filename} loaded successfully from SharePoint (Graph API)")
+                            st.session_state.last_uploaded_file_bytes = None
+                            st.session_state.chat_history = []
+                            st.session_state.raw_text = all_text
+                            st.session_state.qa = build_qa_engine(all_text, openai_api_key)
+                            st.success(f"✅ Loaded {len(all_files)} files from folder successfully")
 
                 except requests.exceptions.HTTPError as e:
                     st.error(f"❌ HTTP Error: {e.response.status_code} - {e.response.text}")
                 except Exception as e:
                     st.error(f"❌ Unexpected Error: {e}")
-            else:
-                st.warning("⚠️ Please fill Tenant ID, Client ID, Client Secret, and URL.")
 
-    # ---------------- Process File ----------------
-    if uploaded_bytes and filename:
-        # Reset chat if file changed
-        if st.session_state.last_uploaded_file_bytes != uploaded_bytes:
-            st.session_state.last_uploaded_file_bytes = uploaded_bytes
-            st.session_state.chat_history = []
+# ---------------- Process Uploaded File ----------------
+if uploaded_bytes and filename:
+    if st.session_state.last_uploaded_file_bytes != uploaded_bytes:
+        st.session_state.last_uploaded_file_bytes = uploaded_bytes
+        st.session_state.chat_history = []
 
-            # Extract text
-            st.session_state.raw_text = get_raw_text(
-                uploaded_bytes if isinstance(uploaded_bytes, bytes) else uploaded_bytes.getvalue(),
-                filename
-            )
-            if not st.session_state.raw_text.strip():
-                st.error("❌ No text could be extracted from the uploaded file. Please check file format or content.")
-                st.stop()
+        st.session_state.raw_text = get_raw_text(
+            uploaded_bytes if isinstance(uploaded_bytes, bytes) else uploaded_bytes.getvalue(),
+            filename
+        )
+        if not st.session_state.raw_text.strip():
+            st.error("❌ No text could be extracted from the uploaded file. Please check file format or content.")
+            st.stop()
 
-            st.write("📏 Extracted text length:", len(st.session_state.raw_text))
-            # Build QA engine
-            st.session_state.qa = build_qa_engine(st.session_state.raw_text, openai_api_key)
+        st.write("📏 Extracted text length:", len(st.session_state.raw_text))
+        st.session_state.qa = build_qa_engine(st.session_state.raw_text, openai_api_key)
 
-        with st.expander("Preview Extracted Text"):
-            st.text_area("Extracted Content", st.session_state.raw_text[:5000], height=400)
+    with st.expander("Preview Extracted Text"):
+        st.text_area("Extracted Content", st.session_state.raw_text[:5000], height=400)
 
 # ---------------- RIGHT: Chat ----------------
 with right:
@@ -180,7 +188,7 @@ with right:
             "context": result["source_documents"]
         })
 
-    # Show chat history (oldest → newest)
+    # Show chat history
     with chat_container:
         for chat in st.session_state.chat_history:
             st.markdown(f"**You:** {chat['question']}")
