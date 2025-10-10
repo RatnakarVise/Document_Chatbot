@@ -78,25 +78,50 @@ with left:
                     access_token = token_response.json().get("access_token")
 
                     # ---------------- Step 2️⃣ — Detect URL Type ----------------
+                    # if "/:b:/" in sharepoint_url or "/:f:/" in sharepoint_url:
+                    #     # 📎 Sharing Link Mode
+                    #     st.write("Detected: Sharing Link (base64 encoded method)")
+                    #     encoded_url = base64.urlsafe_b64encode(sharepoint_url.encode()).decode().rstrip("=")
+                    #     share_api = f"https://graph.microsoft.com/v1.0/shares/u!{encoded_url}/driveItem/content"
+
+                    #     st.write("### 🔍 Debug Info")
+                    #     st.write(f"**Sharing URL:** {sharepoint_url}")
+                    #     st.write(f"**Encoded URL:** {encoded_url}")
+                    #     st.write(f"**API Used:** {share_api}")
+
+                    #     res = requests.get(share_api, headers={"Authorization": f"Bearer {access_token}"})
+                    #     res.raise_for_status()
+
+                    #     uploaded_bytes = io.BytesIO(res.content)
+                    #     filename = "sharepoint_file"  # fallback name
+                    #     st.write(f"**filename:** {filename}")
+                    #     st.write(f"**uploaded_bytes:** {uploaded_bytes}")
+                    #     st.success("✅ File loaded successfully via Sharing Link")
                     if "/:b:/" in sharepoint_url or "/:f:/" in sharepoint_url:
-                        # 📎 Sharing Link Mode
                         st.write("Detected: Sharing Link (base64 encoded method)")
-                        encoded_url = base64.urlsafe_b64encode(sharepoint_url.encode()).decode().rstrip("=")
-                        share_api = f"https://graph.microsoft.com/v1.0/shares/u!{encoded_url}/driveItem/content"
+                        encoded_url = base64.urlsafe_b64encode(sharepoint_url.strip().encode("utf-8")).decode("utf-8").rstrip("=")
 
-                        st.write("### 🔍 Debug Info")
-                        st.write(f"**Sharing URL:** {sharepoint_url}")
-                        st.write(f"**Encoded URL:** {encoded_url}")
-                        st.write(f"**API Used:** {share_api}")
+                        # Step 1️⃣ — Get metadata
+                        meta_url = f"https://graph.microsoft.com/v1.0/shares/u!{encoded_url}/driveItem"
+                        meta_res = requests.get(meta_url, headers={"Authorization": f"Bearer {access_token}"})
+                        meta_res.raise_for_status()
+                        meta_json = meta_res.json()
+                        
+                        # Extract file name
+                        filename = meta_json.get("name", "sharepoint_file")
+                        st.write(f"**File Name:** {filename}")
 
-                        res = requests.get(share_api, headers={"Authorization": f"Bearer {access_token}"})
-                        res.raise_for_status()
+                        # Step 2️⃣ — Get download URL
+                        download_url = meta_json.get("@microsoft.graph.downloadUrl")
+                        if download_url:
+                            res = requests.get(download_url)
+                            res.raise_for_status()
+                            uploaded_bytes = io.BytesIO(res.content)
+                            st.write(f"**uploaded_bytes:** {uploaded_bytes}")
+                            st.success(f"✅ {filename} loaded successfully via Sharing Link")
+                        else:
+                            st.error("⚠️ Could not get download URL from Graph metadata.")
 
-                        uploaded_bytes = io.BytesIO(res.content)
-                        filename = "sharepoint_file"  # fallback name
-                        st.write(f"**filename:** {filename}")
-                        st.write(f"**uploaded_bytes:** {uploaded_bytes}")
-                        st.success("✅ File loaded successfully via Sharing Link")
 
                     else:
                         # 🌐 Direct Site File Path Mode
