@@ -94,6 +94,8 @@ with left:
 
                         uploaded_bytes = io.BytesIO(res.content)
                         filename = "sharepoint_file"  # fallback name
+                        st.write(f"**filename:** {filename}")
+                        st.write(f"**uploaded_bytes:** {uploaded_bytes}")
                         st.success("✅ File loaded successfully via Sharing Link")
 
                     else:
@@ -145,7 +147,11 @@ with left:
                 uploaded_bytes if isinstance(uploaded_bytes, bytes) else uploaded_bytes.getvalue(),
                 filename
             )
+            if not st.session_state.raw_text.strip():
+                st.error("❌ No text could be extracted from the uploaded file. Please check file format or content.")
+                st.stop()
 
+            st.write("📏 Extracted text length:", len(st.session_state.raw_text))
             # Build QA engine
             st.session_state.qa = build_qa_engine(st.session_state.raw_text, openai_api_key)
 
