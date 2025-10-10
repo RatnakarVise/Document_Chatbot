@@ -58,24 +58,26 @@ with left:
         sharepoint_url = st.text_input("Enter SharePoint File/Folder URL or Sharing Link")
 
         def load_sharepoint_folder(site_id, folder_path, access_token):
-            """
-            Download all files in a SharePoint folder via Graph API
-            """
+            all_files = []
             folder_api = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drive/root:/{folder_path}:/children"
             res = requests.get(folder_api, headers={"Authorization": f"Bearer {access_token}"})
             res.raise_for_status()
             items = res.json().get("value", [])
 
-            all_files = []
             for item in items:
-                if item.get("file"):  # skip subfolders
+                if item.get("file"):
                     download_url = item.get("@microsoft.graph.downloadUrl")
-                    filename = item.get("name")
                     if download_url:
                         file_res = requests.get(download_url)
                         file_res.raise_for_status()
-                        all_files.append({"name": filename, "bytes": io.BytesIO(file_res.content)})
+                        all_files.append({"name": item.get("name"), "bytes": io.BytesIO(file_res.content)})
+                elif item.get("folder"):
+                    # Recursive call for subfolder
+                    subfolder_path = f"{folder_path}/{item['name']}"
+                    all_files.extend(load_sharepoint_folder(site_id, subfolder_path, access_token))
+
             return all_files
+
 
         if st.button("Load from SharePoint (Graph API)"):
             if sharepoint_url:
@@ -93,7 +95,36 @@ with left:
                     access_token = token_response.json().get("access_token")
 
                     # ---------------- Step 2 — Detect URL Type ----------------
-                    if "/:b:/" in sharepoint_url or "/:f:/" in sharepoint_url or "/:w:/" in sharepoint_url:
+                    # Detect if it is a folder link
+                    if "/:f:/" in sharepoint_url:
+                        st.write("Detected: Folder Sharing Link")
+                        encoded_url = base64.urlsafe_b64encode(sharepoint_url.strip().encode("utf-8")).decode("utf-8").rstrip("=")
+                        
+                        # Get folder metadata
+                        folder_meta_url = f"https://graph.microsoft.com/v1.0/shares/u!{encoded_url}/driveItem/children"
+                        folder_res = requests.get(folder_meta_url, headers={"Authorization": f"Bearer {access_token}"})
+                        folder_res.raise_for_status()
+                        items = folder_res.json().get("value", [])
+                        
+                        if not items:
+                            st.warning("⚠️ No files found in the folder.")
+                        else:
+                            all_text = ""
+                            for item in items:
+                                if item.get("file"):  # skip subfolders
+                                    download_url = item.get("@microsoft.graph.downloadUrl")
+                                    if download_url:
+                                        file_res = requests.get(download_url)
+                                        file_res.raise_for_status()
+                                        all_text += get_raw_text(io.BytesIO(file_res.content).getvalue(), item.get("name")) + "\n\n"
+                            
+                            st.session_state.last_uploaded_file_bytes = None
+                            st.session_state.chat_history = []
+                            st.session_state.raw_text = all_text
+                            st.session_state.qa = build_qa_engine(all_text, openai_api_key)
+                            st.success(f"✅ Loaded {len(items)} files from folder successfully")
+
+                    elif "/:b:/" in sharepoint_url or "/:w:/" in sharepoint_url:
                         # Single file sharing link
                         st.write("Detected: Sharing Link (single file)")
                         encoded_url = base64.urlsafe_b64encode(sharepoint_url.strip().encode("utf-8")).decode("utf-8").rstrip("=")
