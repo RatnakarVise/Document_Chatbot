@@ -58,9 +58,9 @@ with left:
         sharepoint_url = st.text_input("Enter SharePoint File URL or Sharing Link")
 
         # Optional manual override
-        tenant_id = st.text_input("Tenant ID", value=tenant_id or "")
-        client_id = st.text_input("Client ID", value=client_id or "")
-        client_secret = st.text_input("Client Secret", value=client_secret or "", type="password")
+        # tenant_id = st.text_input("Tenant ID", value=tenant_id or "")
+        # client_id = st.text_input("Client ID", value=client_id or "")
+        # client_secret = st.text_input("Client Secret", value=client_secret or "", type="password")
 
         if st.button("Load from SharePoint (Graph API)"):
             if sharepoint_url and client_id and client_secret and tenant_id:
@@ -78,26 +78,7 @@ with left:
                     access_token = token_response.json().get("access_token")
 
                     # ---------------- Step 2️⃣ — Detect URL Type ----------------
-                    # if "/:b:/" in sharepoint_url or "/:f:/" in sharepoint_url:
-                    #     # 📎 Sharing Link Mode
-                    #     st.write("Detected: Sharing Link (base64 encoded method)")
-                    #     encoded_url = base64.urlsafe_b64encode(sharepoint_url.encode()).decode().rstrip("=")
-                    #     share_api = f"https://graph.microsoft.com/v1.0/shares/u!{encoded_url}/driveItem/content"
-
-                    #     st.write("### 🔍 Debug Info")
-                    #     st.write(f"**Sharing URL:** {sharepoint_url}")
-                    #     st.write(f"**Encoded URL:** {encoded_url}")
-                    #     st.write(f"**API Used:** {share_api}")
-
-                    #     res = requests.get(share_api, headers={"Authorization": f"Bearer {access_token}"})
-                    #     res.raise_for_status()
-
-                    #     uploaded_bytes = io.BytesIO(res.content)
-                    #     filename = "sharepoint_file"  # fallback name
-                    #     st.write(f"**filename:** {filename}")
-                    #     st.write(f"**uploaded_bytes:** {uploaded_bytes}")
-                    #     st.success("✅ File loaded successfully via Sharing Link")
-                    if "/:b:/" in sharepoint_url or "/:f:/" in sharepoint_url:
+                    if "/:b:/" in sharepoint_url or "/:f:/" in sharepoint_url or "/:w:/" in sharepoint_url:
                         st.write("Detected: Sharing Link (base64 encoded method)")
                         encoded_url = base64.urlsafe_b64encode(sharepoint_url.strip().encode("utf-8")).decode("utf-8").rstrip("=")
 
@@ -117,7 +98,7 @@ with left:
                             res = requests.get(download_url)
                             res.raise_for_status()
                             uploaded_bytes = io.BytesIO(res.content)
-                            st.write(f"**uploaded_bytes:** {uploaded_bytes}")
+                            # st.write(f"**uploaded_bytes:** {uploaded_bytes}")
                             st.success(f"✅ {filename} loaded successfully via Sharing Link")
                         else:
                             st.error("⚠️ Could not get download URL from Graph metadata.")
@@ -131,11 +112,11 @@ with left:
                         site_name = path_parts[1] if len(path_parts) > 1 else "sites"
                         relative_file_path = "/".join(path_parts[2:])
 
-                        st.write("### 🔍 Debug Info")
-                        st.write(f"**Original URL:** {sharepoint_url}")
-                        st.write(f"**Site Hostname:** {site_hostname}")
-                        st.write(f"**Site Name:** {site_name}")
-                        st.write(f"**Relative File Path:** {relative_file_path}")
+                        # st.write("### 🔍 Debug Info")
+                        # st.write(f"**Original URL:** {sharepoint_url}")
+                        # st.write(f"**Site Hostname:** {site_hostname}")
+                        # st.write(f"**Site Name:** {site_name}")
+                        # st.write(f"**Relative File Path:** {relative_file_path}")
 
                         # Step 3️⃣ — Get Site ID
                         site_api = f"https://graph.microsoft.com/v1.0/sites/{site_hostname}:/sites/{site_name}"
@@ -151,6 +132,7 @@ with left:
 
                         uploaded_bytes = io.BytesIO(file_res.content)
                         filename = os.path.basename(relative_file_path)
+                        st.write(f"**File Name:** {filename}")
                         st.success(f"✅ {filename} loaded successfully from SharePoint (Graph API)")
 
                 except requests.exceptions.HTTPError as e:
