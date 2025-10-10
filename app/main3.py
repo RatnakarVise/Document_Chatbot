@@ -1,12 +1,15 @@
 import streamlit as st
 import os
-import io
-import requests
 from dotenv import load_dotenv
+import io
 from urllib.parse import urlparse, unquote
 
 from file_loader import get_raw_text
 from qa_engine import build_qa_engine
+
+# Optional: SharePoint SDK
+from office365.sharepoint.client_context import ClientContext
+from office365.runtime.auth.client_credential import ClientCredential
 
 # ---------------- Load Environment ----------------
 dotenv_path = os.path.join(os.path.dirname(__file__), ".env")
@@ -42,7 +45,6 @@ with left:
     uploaded_bytes = None
     filename = ""
 
-    # --- Local Upload ---
     if option == "Upload File":
         uploaded_file = st.file_uploader(
             "Upload PDF, DOCX, Excel, or ZIP",
@@ -52,65 +54,39 @@ with left:
             uploaded_bytes = uploaded_file.read()
             filename = uploaded_file.name
 
-    # --- SharePoint via Graph API ---
     elif option == "SharePoint Link":
-        st.markdown("Use Azure AD App Registration (Client ID / Secret).")
+        st.markdown("Use your App Registration credentials (no password needed).")
         sharepoint_url = st.text_input("Enter SharePoint File URL")
 
-        # Optional manual override
-        tenant_id = st.text_input("Tenant ID", value=tenant_id or "")
-        client_id = st.text_input("Client ID", value=client_id or "")
-        client_secret = st.text_input("Client Secret", value=client_secret or "", type="password")
-
-        if st.button("Load from SharePoint (Graph API)"):
-            if sharepoint_url and client_id and client_secret and tenant_id:
+        if st.button("Load from SharePoint"):
+            if sharepoint_url:
                 try:
                     parsed = urlparse(sharepoint_url)
-                    site_hostname = parsed.netloc
-                    path_parts = parsed.path.strip("/").split("/")
-                    site_name = path_parts[1] if len(path_parts) > 1 else "sites"
-                    relative_file_path = "/".join(path_parts[2:])
+                    site_url = f"{parsed.scheme}://{parsed.netloc}"
+                    relative_url = unquote(parsed.path)
 
+                    # 🧭 Debug info
                     st.write("### 🔍 Debug Info")
                     st.write(f"**Original URL:** {sharepoint_url}")
-                    st.write(f"**Site Hostname:** {site_hostname}")
-                    st.write(f"**Site Name:** {site_name}")
-                    st.write(f"**Relative File Path:** {relative_file_path}")
+                    st.write(f"**Parsed URL:** {parsed}")
+                    st.write(f"**Site URL (base):** {site_url}")
+                    st.write(f"**Relative URL (path):** {relative_url}")
+                    st.write(f"**Client ID:** {client_id}")
+                    st.write(f"**Client Secret:** {client_secret}")
+                    
+                    # Use App Registration for secure access
+                    credentials = ClientCredential(client_id, client_secret)
+                    ctx = ClientContext(site_url).with_credentials(credentials)
 
-                    # Step 1️⃣ — Get Access Token
-                    token_url = f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
-                    token_data = {
-                        "grant_type": "client_credentials",
-                        "client_id": client_id,
-                        "client_secret": client_secret,
-                        "scope": "https://graph.microsoft.com/.default"
-                    }
-                    token_response = requests.post(token_url, data=token_data)
-                    token_response.raise_for_status()
-                    access_token = token_response.json().get("access_token")
+                    uploaded_bytes = io.BytesIO()
+                    file = ctx.web.get_file_by_server_relative_url(relative_url)
+                    file.download(uploaded_bytes).execute_query()
+                    uploaded_bytes.seek(0)
 
-                    # Step 2️⃣ — Get Site ID
-                    site_api = f"https://graph.microsoft.com/v1.0/sites/{site_hostname}:/sites/{site_name}"
-                    site_res = requests.get(site_api, headers={"Authorization": f"Bearer {access_token}"})
-                    site_res.raise_for_status()
-                    site_id = site_res.json()["id"]
-                    st.write(f"✅ Site ID: {site_id}")
-
-                    # Step 3️⃣ — Get File (Drive Item)
-                    drive_api = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drive/root:/{relative_file_path}:/content"
-                    file_res = requests.get(drive_api, headers={"Authorization": f"Bearer {access_token}"})
-                    file_res.raise_for_status()
-
-                    uploaded_bytes = io.BytesIO(file_res.content)
-                    filename = os.path.basename(relative_file_path)
-                    st.success(f"✅ {filename} loaded successfully from SharePoint (Graph API)")
-
-                except requests.exceptions.HTTPError as e:
-                    st.error(f"❌ HTTP Error: {e.response.status_code} - {e.response.text}")
+                    filename = os.path.basename(relative_url)
+                    st.success(f"✅ {filename} loaded from SharePoint using App Credentials")
                 except Exception as e:
-                    st.error(f"❌ Unexpected Error: {e}")
-            else:
-                st.warning("⚠️ Please fill Tenant ID, Client ID, Client Secret, and URL.")
+                    st.error(f"❌ Error loading from SharePoint: {e}")
 
     # ---------------- Process File ----------------
     if uploaded_bytes and filename:
@@ -120,10 +96,7 @@ with left:
             st.session_state.chat_history = []
 
             # Extract text
-            st.session_state.raw_text = get_raw_text(
-                uploaded_bytes if isinstance(uploaded_bytes, bytes) else uploaded_bytes.getvalue(),
-                filename
-            )
+            st.session_state.raw_text = get_raw_text(uploaded_bytes if isinstance(uploaded_bytes, bytes) else uploaded_bytes.getvalue(), filename)
 
             # Build QA engine
             st.session_state.qa = build_qa_engine(st.session_state.raw_text, openai_api_key)
@@ -136,6 +109,7 @@ with right:
     st.header("💬 Chat with Document")
 
     chat_container = st.container()
+
     query = st.chat_input("Ask something about the document...")
 
     if query and st.session_state.qa:
