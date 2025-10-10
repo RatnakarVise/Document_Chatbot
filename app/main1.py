@@ -65,6 +65,15 @@ with left:
                     site_url = f"{parsed.scheme}://{parsed.netloc}"
                     relative_url = unquote(parsed.path)
 
+                    # 🧭 Debug info
+                    st.write("### 🔍 Debug Info")
+                    st.write(f"**Original URL:** {sharepoint_url}")
+                    st.write(f"**Parsed URL:** {parsed}")
+                    st.write(f"**Site URL (base):** {site_url}")
+                    st.write(f"**Relative URL (path):** {relative_url}")
+                    st.write(f"**Client ID:** {client_id}")
+                    st.write(f"**Client Secret:** {client_secret}")
+                    
                     # Use App Registration for secure access
                     credentials = ClientCredential(client_id, client_secret)
                     ctx = ClientContext(site_url).with_credentials(credentials)
