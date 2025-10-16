@@ -43,16 +43,18 @@ def build_qa_engine(raw_text: str,
     retriever = vectorstore.as_retriever()
 
     # LLM configuration - pass api_key; if OPENAI_API_BASE is set in env, langchain-openai should use it
-    llm = ChatOpenAI(model=model_name, temperature=0.1, openai_api_key=openai_api_key)
+    llm = ChatOpenAI(model=model_name, temperature=0.3, openai_api_key=openai_api_key)
 
     prompt_template = """Use the following context to answer the question.
-If the answer is not in the document, say "I don't know."
+                    You are an intelligent assistant that answers questions using only the provided context.
+                    - If the context contains multiple relevant points, combine them logically into a single coherent answer.
+                    If the answer is not in the document, say "I don't know."
 
-Context:
-{context}
+                    Context:
+                    {context}
 
-Question: {question}
-Answer:"""
+                    Question: {question}
+                    Answer:"""
     PROMPT = PromptTemplate(template=prompt_template, input_variables=["context", "question"])
 
     qa = RetrievalQA.from_chain_type(
