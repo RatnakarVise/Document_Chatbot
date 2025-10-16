@@ -64,6 +64,7 @@ if st.session_state.page == "upload":
     left_col, right_col = st.columns([1, 2])
 
     with right_col:
+        st.markdown("---")
         option = st.radio("Choose Input Method:", ["Upload File", "SharePoint Link"])
         uploaded_bytes = None
         filename = None
@@ -175,7 +176,12 @@ if st.session_state.page == "upload":
                                     st.success(f"✅ Loaded and saved file as '{cache_name}'")
                         except Exception as e:
                             st.error(f"Error loading SharePoint: {e}")
-
+            if st.session_state.qa:
+                st.markdown("---")
+                st.success("✅ Knowledge base ready.")
+                if st.button("➡️ Go to Chat"): 
+                    st.session_state.page = "chat"        
+    with left_col:
         # -------- MEMORY SECTION --------
         st.markdown("---")
         st.markdown("### 🧠 Persistent Memory")
@@ -202,7 +208,7 @@ if st.session_state.page == "upload":
         if st.session_state.qa:
             st.markdown("---")
             st.success("✅ Knowledge base ready.")
-            if st.button("➡️ Go to Chat"):
+            if st.button("➡️ Go to Chat"): 
                 st.session_state.page = "chat"
 
 # =====================================================================
