@@ -40,15 +40,22 @@ def build_qa_engine(raw_text: str,
         embeddings = _get_embeddings(openai_api_key)
         vectorstore = FAISS.from_texts(chunks, embeddings)
 
-    retriever = vectorstore.as_retriever()
+    retriever = vectorstore.as_retriever(
+        search_kwargs={ "k": 6, # fetch more documents for better recall 
+                       }
+    )
 
     # LLM configuration - pass api_key; if OPENAI_API_BASE is set in env, langchain-openai should use it
     llm = ChatOpenAI(model=model_name, temperature=0.3, openai_api_key=openai_api_key)
 
     prompt_template = """Use the following context to answer the question.
-                    You are an intelligent assistant that answers questions using only the provided context.
-                    - If the context contains multiple relevant points, combine them logically into a single coherent answer.
-                    If the answer is not in the document, say "I don't know."
+                    You are a highly intelligent assistant that answers questions based on the provided context.
+                    Use the context to provide the **most relevant, informative, and complete** answer possible.
+                    - If the context partially contains the answer, infer the missing parts logically.
+                    - If the context does not contain an exact answer, use reasoning or related details from context.
+                    - Never reply "I don't know." — give the best possible answer using available context.
+                    - If the question is generic, answer based on common understanding related to the context domain.
+
 
                     Context:
                     {context}
