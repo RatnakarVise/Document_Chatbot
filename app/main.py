@@ -93,6 +93,18 @@ with left:
 
             return all_files
 
+        # ---------------- MEMORY LOAD SECTION ----------------
+st.markdown("### 🧠 Persistent Memory")
+if st.button("Load from Memory"):
+    with st.spinner("🔄 Loading saved knowledge base from memory..."):
+        try:
+            vectorstore = load_vectorstore(openai_api_key, PERSIST_DIR)
+            retriever = vectorstore.as_retriever()
+            st.session_state.qa, _ = build_qa_engine("", openai_api_key)
+            st.session_state.qa.retriever = retriever
+            st.success("✅ Knowledge base loaded from memory successfully!")
+        except Exception as e:
+            st.error(f"⚠️ Failed to load memory: {e}")
 
         if st.button("Load from SharePoint (Graph API)"):
             if sharepoint_url:
@@ -161,7 +173,12 @@ with left:
                                 st.session_state.last_uploaded_file_bytes = None
                                 st.session_state.chat_history = []
                                 st.session_state.raw_text = get_raw_text(uploaded_bytes.getvalue(), filename)
-                                st.session_state.qa = build_qa_engine(st.session_state.raw_text, openai_api_key)
+                                # st.session_state.qa = build_qa_engine(st.session_state.raw_text, openai_api_key)
+                                st.session_state.qa, vectorstore = build_qa_engine(st.session_state.raw_text, openai_api_key)
+                                save_vectorstore(vectorstore, PERSIST_DIR)
+                                st.success("💾 Knowledge base saved to memory for future sessions.")
+
+
                                 st.success(f"✅ {filename} loaded successfully")
                             else:
                                 st.error("⚠️ Could not get download URL from Graph metadata.")
