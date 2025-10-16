@@ -180,7 +180,8 @@ if st.session_state.page == "upload":
                 st.markdown("---")
                 st.success("✅ Knowledge base ready.")
                 if st.button("➡️ Go to Chat",key="go_to_chat_sharepoint"): 
-                    st.session_state.page = "chat"        
+                    st.session_state.page = "chat"   
+                    st.rerun()     
     with left_col:
         # -------- MEMORY SECTION --------
         st.markdown("---")
@@ -210,6 +211,7 @@ if st.session_state.page == "upload":
             st.success("✅ Knowledge base ready.")
             if st.button("➡️ Go to Chat", key="go_to_chat_memory"): 
                 st.session_state.page = "chat"
+                st.rerun()
 
 # =====================================================================
 #                            PAGE: Chat
@@ -221,6 +223,7 @@ elif st.session_state.page == "chat":
     else:
         if st.button("⬅️ Back to Upload"):
             st.session_state.page = "upload"
+            st.rerun()
             st.stop()
 
         chat_container = st.container()
