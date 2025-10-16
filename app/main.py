@@ -1,4 +1,3 @@
-# main.py
 import streamlit as st
 import os
 import io
@@ -30,30 +29,21 @@ os.makedirs(PERSIST_DIR, exist_ok=True)
 st.set_page_config(page_title="Doc Chatbot", layout="wide")
 
 # ---------------- Session State Defaults ----------------
-if "page_initialized" not in st.session_state:
+for key, default in {
+    "page_initialized": False,
+    "chat_history": [],
+    "raw_text": "",
+    "qa": None,
+    "current_cache_name": None,
+    "page": "upload"
+}.items():
+    if key not in st.session_state:
+        st.session_state[key] = default
+
+if not st.session_state.page_initialized:
     with st.spinner("🔧 Initializing app..."):
         time.sleep(1)
     st.session_state.page_initialized = True
-
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
-
-if "raw_text" not in st.session_state:
-    st.session_state.raw_text = ""
-
-if "qa" not in st.session_state:
-    st.session_state.qa = None
-
-if "current_cache_name" not in st.session_state:
-    st.session_state.current_cache_name = None
-
-if "page" not in st.session_state:
-    st.session_state.page = "upload"  # default first page
-
-# ---------------- Helper function ----------------
-def go_to_chat():
-    st.session_state.page = "chat"
-    st.runtime.legacy_rerun()
 
 # ---------------- AUTOLOAD (optional) ----------------
 AUTOLOAD = False
@@ -66,20 +56,21 @@ if AUTOLOAD and OPENAI_API_KEY:
     except Exception:
         st.info("ℹ️ No auto-loadable memory found.")
 
-# ---------------- PAGE: Upload / Load Document ----------------
+# =====================================================================
+#                            PAGE: Upload / Load
+# =====================================================================
 if st.session_state.page == "upload":
     st.title("📂 Upload or Load Document")
     left_col, right_col = st.columns([1, 2])
 
     with right_col:
-        st.markdown("---")
         option = st.radio("Choose Input Method:", ["Upload File", "SharePoint Link"])
         uploaded_bytes = None
         filename = None
 
         # -------- FILE UPLOAD --------
         if option == "Upload File":
-            uploaded_file = st.file_uploader("Upload PDF, DOCX, Excel, or ZIP", type=["pdf","docx","xls","xlsx","zip"])
+            uploaded_file = st.file_uploader("Upload PDF, DOCX, Excel, or ZIP", type=["pdf", "docx", "xls", "xlsx", "zip"])
             if uploaded_file:
                 uploaded_bytes = uploaded_file.read()
                 filename = uploaded_file.name
@@ -98,7 +89,6 @@ if st.session_state.page == "upload":
                             st.session_state.qa = qa
                             st.session_state.current_cache_name = cache_name
                             st.success(f"✅ Saved knowledge base as '{cache_name}'")
-                            go_to_chat()
                     except Exception as e:
                         st.error(f"❌ Failed to process file: {e}")
 
@@ -147,57 +137,52 @@ if st.session_state.page == "upload":
                             token_response.raise_for_status()
                             access_token = token_response.json().get("access_token")
 
-                            # Detect sharing type
-                            if "/:f:/" in sharepoint_url or "/:b:/" in sharepoint_url or "/:w:/" in sharepoint_url:
-                                encoded_url = base64.urlsafe_b64encode(sharepoint_url.strip().encode("utf-8")).decode("utf-8").rstrip("=")
-                                meta_url = f"https://graph.microsoft.com/v1.0/shares/u!{encoded_url}/driveItem"
-                                meta_res = requests.get(meta_url, headers={"Authorization": f"Bearer {access_token}"})
-                                meta_res.raise_for_status()
-                                meta_json = meta_res.json()
-                                # Folder
-                                if meta_json.get("folder"):
-                                    children_url = f"{meta_url}/children"
-                                    children_res = requests.get(children_url, headers={"Authorization": f"Bearer {access_token}"})
-                                    children_res.raise_for_status()
-                                    items = children_res.json().get("value", [])
-                                    if items:
-                                        all_text = ""
-                                        for item in items:
-                                            if item.get("file"):
-                                                download_url = item.get("@microsoft.graph.downloadUrl")
-                                                if download_url:
-                                                    file_res = requests.get(download_url)
-                                                    file_res.raise_for_status()
-                                                    all_text += get_raw_text(file_res.content, item.get("name")) + "\n\n"
-                                        qa, vectorstore = build_qa_engine(all_text, OPENAI_API_KEY, cache_name=cache_name)
-                                        save_vectorstore(vectorstore, PERSIST_DIR, cache_name=cache_name)
-                                        st.session_state.qa = qa
-                                        st.session_state.current_cache_name = cache_name
-                                        st.success(f"✅ Loaded and saved folder as '{cache_name}'")
-                                        go_to_chat()
-                                else:
-                                    # Single file
-                                    filename = meta_json.get("name", "sharepoint_file")
-                                    download_url = meta_json.get("@microsoft.graph.downloadUrl")
-                                    if download_url:
-                                        file_res = requests.get(download_url)
-                                        file_res.raise_for_status()
-                                        raw_text = get_raw_text(file_res.content, filename)
-                                        qa, vectorstore = build_qa_engine(raw_text, OPENAI_API_KEY, cache_name=cache_name)
-                                        save_vectorstore(vectorstore, PERSIST_DIR, cache_name=cache_name)
-                                        st.session_state.qa = qa
-                                        st.session_state.current_cache_name = cache_name
-                                        st.success(f"✅ Loaded and saved file as '{cache_name}'")
-                                        go_to_chat()
+                            encoded_url = base64.urlsafe_b64encode(sharepoint_url.strip().encode("utf-8")).decode("utf-8").rstrip("=")
+                            meta_url = f"https://graph.microsoft.com/v1.0/shares/u!{encoded_url}/driveItem"
+                            meta_res = requests.get(meta_url, headers={"Authorization": f"Bearer {access_token}"})
+                            meta_res.raise_for_status()
+                            meta_json = meta_res.json()
+
+                            if meta_json.get("folder"):
+                                children_url = f"{meta_url}/children"
+                                children_res = requests.get(children_url, headers={"Authorization": f"Bearer {access_token}"})
+                                children_res.raise_for_status()
+                                items = children_res.json().get("value", [])
+                                all_text = ""
+                                for item in items:
+                                    if item.get("file"):
+                                        download_url = item.get("@microsoft.graph.downloadUrl")
+                                        if download_url:
+                                            file_res = requests.get(download_url)
+                                            file_res.raise_for_status()
+                                            all_text += get_raw_text(file_res.content, item.get("name")) + "\n\n"
+                                qa, vectorstore = build_qa_engine(all_text, OPENAI_API_KEY, cache_name=cache_name)
+                                save_vectorstore(vectorstore, PERSIST_DIR, cache_name=cache_name)
+                                st.session_state.qa = qa
+                                st.session_state.current_cache_name = cache_name
+                                st.success(f"✅ Loaded and saved folder as '{cache_name}'")
+                            else:
+                                filename = meta_json.get("name", "sharepoint_file")
+                                download_url = meta_json.get("@microsoft.graph.downloadUrl")
+                                if download_url:
+                                    file_res = requests.get(download_url)
+                                    file_res.raise_for_status()
+                                    raw_text = get_raw_text(file_res.content, filename)
+                                    qa, vectorstore = build_qa_engine(raw_text, OPENAI_API_KEY, cache_name=cache_name)
+                                    save_vectorstore(vectorstore, PERSIST_DIR, cache_name=cache_name)
+                                    st.session_state.qa = qa
+                                    st.session_state.current_cache_name = cache_name
+                                    st.success(f"✅ Loaded and saved file as '{cache_name}'")
                         except Exception as e:
                             st.error(f"Error loading SharePoint: {e}")
-    with left_col:
-    # -------- MEMORY SELECTION --------
+
+        # -------- MEMORY SECTION --------
         st.markdown("---")
         st.markdown("### 🧠 Persistent Memory")
         caches = [d for d in os.listdir(PERSIST_DIR) if os.path.isdir(os.path.join(PERSIST_DIR, d))]
         st.write("Available caches:", caches if caches else "No saved caches yet.")
         selected_cache = st.selectbox("Select cache to load", options=["-- select --"] + caches)
+
         if st.button("Load selected cache"):
             if selected_cache and selected_cache != "-- select --":
                 try:
@@ -206,7 +191,6 @@ if st.session_state.page == "upload":
                         st.session_state.qa, _ = build_qa_engine("", OPENAI_API_KEY, load_vectorstore_obj=vectorstore)
                         st.session_state.current_cache_name = selected_cache
                         st.success(f"✅ Loaded '{selected_cache}' into memory.")
-                        go_to_chat()
                 except Exception as e:
                     st.error(f"Failed to load cache: {e}")
 
@@ -215,19 +199,24 @@ if st.session_state.page == "upload":
             st.session_state.current_cache_name = None
             st.success("Cleared in-memory QA engine.")
 
-    
-    st.info("💬 Chat interface will be available after you upload/load a knowledge base.")
+        if st.session_state.qa:
+            st.markdown("---")
+            st.success("✅ Knowledge base ready.")
+            if st.button("➡️ Go to Chat"):
+                st.session_state.page = "chat"
 
-# ---------------- PAGE: Chat ----------------
+# =====================================================================
+#                            PAGE: Chat
+# =====================================================================
 elif st.session_state.page == "chat":
-    if st.button("⬅️ Back to Upload/Load"):
-        st.session_state.page = "upload"
-        st.runtime.legacy_rerun()
-
     st.header("💬 Chat with Document")
     if not st.session_state.qa:
         st.warning("⚠️ No knowledge base loaded. Go back to upload/load first.")
     else:
+        if st.button("⬅️ Back to Upload"):
+            st.session_state.page = "upload"
+            st.stop()
+
         chat_container = st.container()
         query = st.chat_input("Ask something about the document...")
 
