@@ -245,7 +245,3 @@ elif st.session_state.page == "chat":
             for chat in st.session_state.chat_history:
                 st.markdown(f"**You:** {chat['question']}")
                 st.markdown(f"**Bot:** {chat['answer']}")
-                if chat.get("context"):
-                    with st.expander("🔍 Relevant Context"):
-                        for doc in chat["context"]:
-                            st.write(doc.page_content[:400] + "...")
