@@ -1,21 +1,23 @@
-import os
-from langchain_community.vectorstores import FAISS
-from langchain_openai import OpenAIEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_community.vectorstores import FAISS
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
-from langchain_openai import ChatOpenAI
 
 def build_qa_engine(raw_text, openai_api_key, model_name="gpt-5", chunk_size=1000, chunk_overlap=100):
+    # Split text
     splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
     chunks = splitter.split_text(raw_text)
 
+    # Embeddings & Vector DB
     embeddings = OpenAIEmbeddings(openai_api_key=openai_api_key)
     vectorstore = FAISS.from_texts(chunks, embeddings)
     retriever = vectorstore.as_retriever()
 
+    # LLM
     llm = ChatOpenAI(model=model_name, temperature=0.3, openai_api_key=openai_api_key)
 
+    # Prompt
     prompt_template = """Use the following context to answer the question.
 If the answer is not in the document, say "I don't know."
 
@@ -35,11 +37,4 @@ Answer:"""
         return_source_documents=True,
     )
 
-    return qa, vectorstore
-
-def save_vectorstore(vectorstore, persist_dir):
-    vectorstore.save_local(persist_dir)
-
-def load_vectorstore(openai_api_key, persist_dir):
-    embeddings = OpenAIEmbeddings(openai_api_key=openai_api_key)
-    return FAISS.load_local(persist_dir, embeddings, allow_dangerous_deserialization=True)
+    return qa

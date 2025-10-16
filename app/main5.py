@@ -6,12 +6,8 @@ from dotenv import load_dotenv
 from urllib.parse import urlparse
 import base64
 from file_loader import get_raw_text
-from qa_engine import build_qa_engine, save_vectorstore, load_vectorstore
+from qa_engine import build_qa_engine
 import time
-
-PERSIST_DIR = "persisted_data"
-os.makedirs(PERSIST_DIR, exist_ok=True)
-
 # ---------------- Load Environment ----------------
 dotenv_path = os.path.join(os.path.dirname(__file__), ".env")
 load_dotenv(dotenv_path=dotenv_path)
@@ -32,14 +28,7 @@ if "last_uploaded_file_bytes" not in st.session_state:
 if "raw_text" not in st.session_state:
     st.session_state.raw_text = ""
 if "qa" not in st.session_state:
-    try:
-        vectorstore = load_vectorstore(openai_api_key, PERSIST_DIR)
-        retriever = vectorstore.as_retriever()
-        st.session_state.qa, _ = build_qa_engine("", openai_api_key)  # init model
-        st.session_state.qa.retriever = retriever
-        st.success("✅ Loaded previously saved knowledge base")
-    except Exception:
-        st.warning("ℹ️ No saved knowledge base found.")
+    st.session_state.qa = None
 
 # ---------------- Streamlit Page ----------------
 st.set_page_config(page_title="Doc Chatbot", layout="wide")
